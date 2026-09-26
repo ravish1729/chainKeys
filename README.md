@@ -11,6 +11,22 @@ The owner sets a budget. The agent gets its own key and a public name. Intercept
 
 The spendable ETH sits on the contract. The agent key only holds a little ETH for gas.
 
+## How a payment moves
+
+```mermaid
+flowchart TD
+  owner[Owner wallet] -->|Deploy and fund| account[SessionAccount]
+  owner -->|Arm the budget| account
+  owner -->|Set the name| ens[ENS name]
+  owner -->|Fund gas| agent[Agent key]
+  ens -->|"Hand to a teammate, contractor, or another agent"| agent
+  agent -->|Draft a payment| screen{Intercepta}
+  screen -->|Refuse| unsigned[Key does not sign]
+  screen -->|Allow| preview{Contract preview}
+  preview -->|Fail| stay[ETH stays in the contract]
+  preview -->|Pass| paid[ETH leaves the contract]
+```
+
 ## Run it
 
 ```bash
@@ -47,3 +63,10 @@ Before the agent signs, the app asks Intercepta about the payment. The check use
 - **Which token**, on a swap. Token risk is requested with `chainId=1` (Ethereum mainnet).
 
 A score of 50 or more, or a token marked `block`, refuses the payment. The key never signs, so no transaction is sent. USDC and a known-good wallet pass. The demo scam token is refused by the app's own check when Intercepta has no record for that address. Sepolia only runs the payment after the screen allows it.
+
+## Future work
+
+- **Pay a name.** The agent drafts `uniswap.eth` or `vitalik.eth`. The app resolves it on mainnet and refuses when that address is not the one in the draft, before Intercepta and before the key signs.
+- **Clear the name on revoke.** Revoke already clears `agentEns` on the Sepolia contract. The mainnet address record and the `agent-account` text record should clear in the same step, so the name stops advertising a key that can no longer spend.
+- **Hand the key over.** The session key stays in the owner's browser. Giving the session to someone else should pass them that key, or a signer scoped to this budget, without pasting it into a chat.
+- **Real swaps.** Uniswap v4 and 1inch are allowlisted addresses. On Sepolia those routers have no code, so a passing swap moves ETH to that address. A real fill is a later step.
