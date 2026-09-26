@@ -79,6 +79,7 @@ export function Landing() {
             <a href="#ens">The name</a>
             <a href="#protect">The screen</a>
             <a href="#flow">The flow</a>
+            <a href="#different">Difference</a>
             <ThemeSwitch />
             <a className="btn" href="#/app">
               Try now
@@ -121,10 +122,11 @@ export function Landing() {
         <section className="wrap site-section" id="ens">
           <div className="ens-split">
             <div>
-              <h2>The agent has a public name.</h2>
+              <h2>Hand the session over by name.</h2>
               <p>
-                Anyone can type <code>ens name</code>. Ethereum mainnet returns the session key. A
-                text record points at the contract that holds the funds.
+                A teammate, a contractor, or another agent gets <code>ens name</code> and a key that
+                spends only inside your budget. The name shows which key signs and which contract
+                holds the funds. Revoke, and it stops pointing at their key.
               </p>
             </div>
             <EnsShot />
@@ -217,6 +219,24 @@ export function Landing() {
                 </>
               }
             />
+          </div>
+        </section>
+
+        <section className="wrap site-section" id="different">
+          <h2>A public name, a screen, and a public budget.</h2>
+          <div className="site-peers">
+            <article>
+              <h3>Safe, ZeroDev, Rhinestone</h3>
+              <p>A session key with a spending limit. The agent has no public name, and nothing checks who would be paid before the key signs.</p>
+            </article>
+            <article>
+              <h3>Coinbase agentic wallets</h3>
+              <p>The spending limit sits in a private enclave. Outsiders cannot read the policy or the refusal on a public contract.</p>
+            </article>
+            <article>
+              <h3>Chainkeys</h3>
+              <p>The agent has an ENS name. Intercepta screens the payment before the signature. The budget is a public contract, so the refusal is on-chain.</p>
+            </article>
           </div>
         </section>
 
