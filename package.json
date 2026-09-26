@@ -1,0 +1,10 @@
+{
+  "name": "chainkeys",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix web run start",
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "preview": "npm --prefix web run preview"
+  }
+}
