@@ -52,6 +52,8 @@ export function SepoliaLive() {
     if (!typed.includes('.')) {
       setEns({
         name: typed || '(empty)',
+        network: 'mainnet',
+        exists: false,
         address: null,
         description: null,
         url: null,
@@ -68,6 +70,8 @@ export function SepoliaLive() {
     } catch (err) {
       setEns({
         name: typed,
+        network: 'mainnet',
+        exists: false,
         address: null,
         description: null,
         url: null,

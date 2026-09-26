@@ -11,7 +11,7 @@ import {
   verifyDeployment,
 } from './chainActions'
 import { etherscanAddress, etherscanReadContract } from './sepolia'
-import { chooseWallet, listWallets, selectedWalletRdns, type WalletChoice } from './wallet'
+import { chooseWallet, disconnectWallet, listWallets, selectedWalletRdns, type WalletChoice } from './wallet'
 
 type Panel = 'owner' | 'agent' | 'policy' | 'test'
 
@@ -37,6 +37,7 @@ export function TryNow({
   ownerEns,
   onOwnerEns,
   onConnected,
+  onDisconnected,
   contractAddress,
   onContract,
   sessionAddress,
@@ -50,6 +51,7 @@ export function TryNow({
   ownerEns: string
   onOwnerEns: (name: string) => void
   onConnected: (address: string, ensName: string | null) => void
+  onDisconnected: () => void
   contractAddress: string
   onContract: (address: string) => void
   sessionAddress: string
@@ -133,7 +135,7 @@ export function TryNow({
       }
       const next = await connectOwner()
       onConnected(next.address, next.ensName)
-      if (next.ensName) onOwnerEns(next.ensName)
+      onOwnerEns(next.ensName ?? '')
     })
   }
 
@@ -185,8 +187,22 @@ export function TryNow({
           never receives that balance.
         </p>
         <div className="card">
-          {ownerAddress ? null : (
-            <div className="row">
+          <div className="row">
+            {ownerAddress ? (
+              <button
+                className="btn ghost"
+                type="button"
+                disabled={busy != null}
+                onClick={() => {
+                  setPickerOpen(false)
+                  disconnectWallet()
+                  setWalletId(null)
+                  onDisconnected()
+                }}
+              >
+                Disconnect
+              </button>
+            ) : (
               <button
                 className="btn"
                 type="button"
@@ -203,8 +219,8 @@ export function TryNow({
               >
                 {busy?.startsWith('connect:') ? 'Connecting…' : 'Connect wallet'}
               </button>
-            </div>
-          )}
+            )}
+          </div>
           {pickerOpen ? (
             <div className="wallet-modal" role="presentation" onClick={() => setPickerOpen(false)}>
               <div
@@ -238,22 +254,12 @@ export function TryNow({
           ) : null}
           <p className="mono">
             Address {ownerAddress ?? 'not connected'}
-            <br />
-            ENS {ownerEns || (ownerAddress ? 'no primary name on this address' : '—')}
-          </p>
-          <label className="field" htmlFor="owner-ens">
-            Parent .eth name
-            <input
-              id="owner-ens"
-              value={ownerEns}
-              placeholder="yourname.eth"
-              spellCheck={false}
-              onChange={(e) => onOwnerEns(e.target.value.trim())}
-            />
-          </label>
-          <p className="hint">
-            Used for the agent subname{ownerEns.includes('.') ? ` agent.${ownerEns.replace(/^agent\./, '')}` : ''}.
-            Reverse lookup fills this when the wallet has a primary name.
+            {ownerAddress ? (
+              <>
+                <br />
+                ENS {ownerEns || 'no name on this address'}
+              </>
+            ) : null}
           </p>
           <div className="row" style={{ marginTop: 14 }}>
             <button

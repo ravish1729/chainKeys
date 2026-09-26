@@ -1,6 +1,6 @@
-import { createPublicClient, formatEther, http, isAddress, type Address } from 'viem'
+import { createPublicClient, formatEther, http, isAddress, keccak256, toHex, type Address, type PublicClient } from 'viem'
 import { mainnet, sepolia } from 'viem/chains'
-import { normalize } from 'viem/ens'
+import { namehash, normalize } from 'viem/ens'
 
 export type ChainConfig = {
   rpc: string
@@ -11,8 +11,15 @@ export type ChainConfig = {
   swapTx: string
 }
 
+export type EnsNetwork = 'mainnet' | 'sepolia'
+
+/** Sepolia subname under the name registered for this demo. The address record is the contract. */
+export const SEPOLIA_SUBNAME_EXAMPLE = 'agent.chainkeys.eth'
+
 export type LiveEns = {
   name: string
+  network: EnsNetwork
+  exists: boolean
   address: string | null
   description: string | null
   url: string | null
@@ -157,27 +164,103 @@ export async function readAccount(config: ChainConfig): Promise<LiveAccount> {
   }
 }
 
-export async function readEns(config: ChainConfig): Promise<LiveEns> {
-  const client = createPublicClient({
-    chain: mainnet,
-    transport: http(config.ensRpc),
-  })
+const ENS_REGISTRY = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e' as const
+const ETH_REGISTRY_V2 = '0x657ea849311d3d5823348dded7c2aaafb3ede09e' as const
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+const registryAbi = [
+  {
+    type: 'function',
+    name: 'recordExists',
+    stateMutability: 'view',
+    inputs: [{ name: 'node', type: 'bytes32' }],
+    outputs: [{ type: 'bool' }],
+  },
+] as const
+
+const registryV2Abi = [
+  {
+    type: 'function',
+    name: 'getSubregistry',
+    stateMutability: 'view',
+    inputs: [{ name: 'label', type: 'string' }],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'getOwner',
+    stateMutability: 'view',
+    inputs: [{ name: 'anyId', type: 'uint256' }],
+    outputs: [{ type: 'address' }],
+  },
+] as const
+
+/** Sepolia names live on ENSv2. The legacy registry does not see them. */
+async function sepoliaV2Registered(client: PublicClient, name: string): Promise<boolean> {
+  const labels = name.split('.').filter(Boolean)
+  if (labels.length < 2 || labels[labels.length - 1] !== 'eth') return false
+  const parts = labels.slice(0, -1).reverse()
+  let registry: Address = ETH_REGISTRY_V2
+  for (let i = 0; i < parts.length; i += 1) {
+    const label = parts[i]
+    const last = i === parts.length - 1
+    if (last) {
+      const owner = await client.readContract({
+        address: registry,
+        abi: registryV2Abi,
+        functionName: 'getOwner',
+        args: [BigInt(keccak256(toHex(label)))],
+      })
+      return owner.toLowerCase() !== ZERO_ADDRESS
+    }
+    const next = await client.readContract({
+      address: registry,
+      abi: registryV2Abi,
+      functionName: 'getSubregistry',
+      args: [label],
+    })
+    if (next.toLowerCase() === ZERO_ADDRESS) return false
+    registry = next
+  }
+  return false
+}
+
+export async function readEns(config: ChainConfig, network: EnsNetwork = 'mainnet'): Promise<LiveEns> {
+  const chain = network === 'sepolia' ? sepolia : mainnet
+  const rpc = network === 'sepolia' ? config.rpc : config.ensRpc
+  const client = createPublicClient({ chain, transport: http(rpc) })
   const name = normalize(config.agentName)
+  const empty = {
+    name,
+    network,
+    exists: false,
+    address: null,
+    description: null,
+    url: null,
+    accountRecord: null,
+  }
   try {
+    const exists =
+      network === 'sepolia'
+        ? await sepoliaV2Registered(client, name).catch(() => false)
+        : await client
+            .readContract({
+              address: ENS_REGISTRY,
+              abi: registryAbi,
+              functionName: 'recordExists',
+              args: [namehash(name)],
+            })
+            .catch(() => false)
     const [address, description, url, accountRecord] = await Promise.all([
       client.getEnsAddress({ name }),
       client.getEnsText({ name, key: 'description' }).catch(() => null),
       client.getEnsText({ name, key: 'url' }).catch(() => null),
       client.getEnsText({ name, key: 'agent-account' }).catch(() => null),
     ])
-    return { name, address, description, url, accountRecord, error: null }
+    return { ...empty, exists, address, description, url, accountRecord, error: null }
   } catch (err) {
     return {
-      name,
-      address: null,
-      description: null,
-      url: null,
-      accountRecord: null,
+      ...empty,
       error: err instanceof Error ? err.message : 'ENS resolution failed',
     }
   }
@@ -199,6 +282,7 @@ export function etherscanTx(hash: string): string {
   return `https://sepolia.etherscan.io/tx/${hash}`
 }
 
-export function ensApp(name: string): string {
-  return `https://app.ens.domains/${name}`
+export function ensApp(name: string, network: EnsNetwork = 'mainnet'): string {
+  const host = network === 'sepolia' ? 'https://app.ens.dev' : 'https://app.ens.domains'
+  return `${host}/${name}`
 }

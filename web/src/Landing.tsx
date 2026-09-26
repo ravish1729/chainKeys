@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Logo } from './Logo'
+import { SEPOLIA_SUBNAME_EXAMPLE } from './sepolia'
 import { ThemeSwitch } from './theme'
 
 function Box({ title, detail, tone }: { title: string; detail?: string; tone?: 'account' | 'stop' | 'ok' }) {
@@ -126,7 +127,9 @@ export function Landing() {
               <p>
                 A teammate, a contractor, or another agent gets <code>ens name</code> and a key that
                 spends only inside your budget. The name shows which key signs and which contract
-                holds the funds. Revoke, and it stops pointing at their key.
+                holds the funds. Revoke, and it stops pointing at their key. On Sepolia,{' '}
+                <a href={`#/name/${encodeURIComponent(SEPOLIA_SUBNAME_EXAMPLE)}`}>agent.chainkeys.eth</a> points
+                at the contract.
               </p>
             </div>
             <EnsShot />

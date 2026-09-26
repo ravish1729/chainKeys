@@ -103,18 +103,55 @@ function mainnetClient() {
   return createPublicClient({ chain: mainnet, transport: http(EMPTY_CHAIN.ensRpc) })
 }
 
+export async function lookupOwnerEns(address: Address): Promise<string | null> {
+  try {
+    const sepoliaName = await sepoliaClient().getEnsName({ address })
+    if (sepoliaName) return sepoliaName
+  } catch {
+    /* Sepolia reverse lookup can fail closed. Try mainnet next. */
+  }
+  try {
+    return await mainnetClient().getEnsName({ address })
+  } catch {
+    return null
+  }
+}
+
+export async function readContractOwner(contract: Address): Promise<Address | null> {
+  try {
+    const owner = await sepoliaClient().readContract({
+      address: contract,
+      abi: [
+        {
+          type: 'function',
+          name: 'owner',
+          stateMutability: 'view',
+          inputs: [],
+          outputs: [{ type: 'address' }],
+        },
+      ] as const,
+      functionName: 'owner',
+    })
+    return getAddress(owner)
+  } catch {
+    return null
+  }
+}
+
 export async function connectOwner(): Promise<{ address: Address; ensName: string | null }> {
+  try {
+    await walletRequest({
+      method: 'wallet_requestPermissions',
+      params: [{ eth_accounts: {} }],
+    })
+  } catch {
+    /* The wallet may only support eth_requestAccounts. */
+  }
   const accounts = (await walletRequest({ method: 'eth_requestAccounts' })) as string[]
   const address = accounts?.[0]
   if (!address || !isAddress(address)) throw new Error('The wallet did not return an account.')
   const checksum = getAddress(address)
-  let ensName: string | null = null
-  try {
-    ensName = await mainnetClient().getEnsName({ address: checksum })
-  } catch {
-    ensName = null
-  }
-  return { address: checksum, ensName }
+  return { address: checksum, ensName: await lookupOwnerEns(checksum) }
 }
 
 export async function deploySessionAccount(owner: Address): Promise<Address> {

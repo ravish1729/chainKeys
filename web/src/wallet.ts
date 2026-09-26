@@ -93,6 +93,24 @@ export function chooseWallet(rdns: string): void {
   localStorage.setItem(WALLET_CHOICE_KEY, rdns)
 }
 
+/** Drop the saved wallet so the next connect can be a different extension or account. */
+export function disconnectWallet(): void {
+  const provider = activeProvider()
+  chosen = null
+  try {
+    localStorage.removeItem(WALLET_CHOICE_KEY)
+  } catch {
+    /* private mode */
+  }
+  if (!provider) return
+  void provider
+    .request({
+      method: 'wallet_revokePermissions',
+      params: [{ eth_accounts: {} }],
+    })
+    .catch(() => undefined)
+}
+
 function messageOf(err: unknown): string {
   if (err instanceof Error && err.message) return err.message
   if (err && typeof err === 'object' && 'message' in err) {

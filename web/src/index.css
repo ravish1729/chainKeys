@@ -908,6 +908,13 @@ pre.logbox {
   border-color: var(--refuse-line);
 }
 
+.ens-lookup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 18px;
+}
+
 .site-peers {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1231,6 +1238,7 @@ pre.logbox {
   .site-steps,
   .site-compare,
   .site-peers,
+  .ens-lookup,
   .ens-split {
     grid-template-columns: 1fr;
   }

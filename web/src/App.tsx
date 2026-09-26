@@ -38,7 +38,8 @@ import { Logo } from './Logo'
 import { ThemeSwitch } from './theme'
 import { signIssue, walletError } from './wallet'
 import { TryNow } from './TryNow'
-import { armContract, executeSessionPayment, readLivePolicy } from './chainActions'
+import { armContract, executeSessionPayment, lookupOwnerEns, readContractOwner, readLivePolicy } from './chainActions'
+import { createAgentSubname } from './ensSubname'
 import { loadChainConfig, etherscanAddress, etherscanReadContract, etherscanTx, readAccount, readEns } from './sepolia'
 import { privateKeyToAccount } from 'viem/accounts'
 import { getAddress, type Address, type Hex } from 'viem'
@@ -63,6 +64,9 @@ type ChainCheck = {
   name: string
   resolved: string | null
   ensError: string | null
+  sepoliaResolved: string | null
+  sepoliaExists: boolean
+  sepoliaError: string | null
   contractEns: string | null
   contractError: string | null
 }
@@ -157,7 +161,7 @@ function Shell({
           {view === 'name' ? (
             <>
               <strong>Look up a name</strong>
-              <span>Type an agent name. Ethereum mainnet resolves it. No wallet.</span>
+              <span>Type an agent name. Mainnet and Sepolia both resolve it. No wallet.</span>
             </>
           ) : (
             <>
@@ -246,6 +250,8 @@ function PolicyView({
   onCheck,
   checking,
   chainCheck,
+  onRegister,
+  registering,
   onOpenTest,
 }: {
   draft: PolicyDraft
@@ -261,6 +267,8 @@ function PolicyView({
   onCheck: () => void
   checking: boolean
   chainCheck: ChainCheck | null
+  onRegister: () => void
+  registering: boolean
   onOpenTest: () => void
 }) {
   function patch(partial: Partial<PolicyDraft>) {
@@ -478,9 +486,22 @@ function PolicyView({
             </>
           ) : null}
           {chainCheck ? (
-            <pre className="logbox">{`name        ${chainCheck.name}
+            <>
+              <pre className="logbox">{`name        ${chainCheck.name}
 ethereum    ${chainCheck.ensError ?? chainCheck.resolved ?? 'no address record'}
+sepolia     ${chainCheck.sepoliaError ?? (chainCheck.sepoliaExists ? chainCheck.sepoliaResolved ?? 'registered, no address record' : 'not registered on ENS')}
 contract    ${chainCheck.contractError ?? chainCheck.contractEns ?? 'agentEns() is empty'}`}</pre>
+              {!chainCheck.sepoliaExists && chainCheck.contractEns === chainCheck.name ? (
+                <>
+                  <p className="hint">
+                    The session name is stored on the contract. Sepolia ENS does not have this subname yet.
+                  </p>
+                  <button className="btn" type="button" onClick={onRegister} disabled={registering || checking}>
+                    {registering ? 'Registering on Sepolia…' : `Register ${chainCheck.name}`}
+                  </button>
+                </>
+              ) : null}
+            </>
           ) : null}
         </div>
         <pre className="logbox">{`SessionAccount.arm + setAgentEns
@@ -816,6 +837,7 @@ function readLive(): {
   owner?: string
   ownerEns?: string
   contract?: string
+  contracts?: Record<string, string>
   session?: string
   sessionSecret?: string
 } {
@@ -826,6 +848,7 @@ function readLive(): {
           owner?: string
           ownerEns?: string
           contract?: string
+          contracts?: Record<string, string>
           session?: string
           sessionSecret?: string
         })
@@ -833,6 +856,16 @@ function readLive(): {
   } catch {
     return {}
   }
+}
+
+function readContracts(): Record<string, string> {
+  const saved = readLive().contracts
+  if (!saved) return {}
+  const next: Record<string, string> = {}
+  for (const [owner, contract] of Object.entries(saved)) {
+    if (isAddress(owner) && isAddress(contract)) next[owner.toLowerCase()] = getAddress(contract)
+  }
+  return next
 }
 
 function savedSessionSecret(): string | null {
@@ -868,10 +901,12 @@ export default function App() {
   const [signer, setSigner] = useState<string | null>(null)
   const [ownerAddress, setOwnerAddress] = useState<string | null>(() => liveValue('owner'))
   const [ownerEns, setOwnerEns] = useState(() => liveValue('ownerEns') ?? '')
-  const [contractAddress, setContractAddress] = useState(() => liveValue('contract') ?? '')
+  const [contractsByOwner, setContractsByOwner] = useState<Record<string, string>>(readContracts)
+  const contractAddress = ownerAddress ? contractsByOwner[ownerAddress.toLowerCase()] ?? '' : ''
   const [sessionAddress, setSessionAddress] = useState(() => liveValue('session') ?? '')
   const [sessionSecret, setSessionSecret] = useState<string | null>(savedSessionSecret)
   const [checking, setChecking] = useState(false)
+  const [registering, setRegistering] = useState(false)
   const [chainCheck, setChainCheck] = useState<ChainCheck | null>(null)
   const [testError, setTestError] = useState<string | null>(null)
 
@@ -892,16 +927,50 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!ownerAddress) return
+    let cancel = false
+    void lookupOwnerEns(ownerAddress as Address).then((name) => {
+      if (!cancel) setOwnerEns(name ?? '')
+    })
+    return () => {
+      cancel = true
+    }
+  }, [ownerAddress])
+
+  useEffect(() => {
+    const legacy = readLive().contract
+    if (!legacy || !isAddress(legacy)) return
+    let cancel = false
+    void readContractOwner(legacy as Address).then((onchainOwner) => {
+      if (cancel || !onchainOwner) return
+      setContractsByOwner((map) => {
+        const key = onchainOwner.toLowerCase()
+        if (map[key]?.toLowerCase() === legacy.toLowerCase()) return map
+        return { ...map, [key]: getAddress(legacy) }
+      })
+    })
+    return () => {
+      cancel = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const previous = readLive()
+    const legacy = previous.contract
+    const assigned =
+      !!legacy &&
+      Object.values(contractsByOwner).some((item) => item.toLowerCase() === legacy.toLowerCase())
     const saved = JSON.stringify({
       owner: ownerAddress,
       ownerEns,
-      contract: contractAddress,
+      contracts: contractsByOwner,
+      contract: assigned ? undefined : legacy,
       session: sessionAddress,
       sessionSecret,
     })
     localStorage.setItem(LIVE_KEY, saved)
     sessionStorage.removeItem(LIVE_KEY)
-  }, [ownerAddress, ownerEns, contractAddress, sessionAddress, sessionSecret])
+  }, [ownerAddress, ownerEns, contractsByOwner, sessionAddress, sessionSecret])
 
   useEffect(() => {
     if (!isAddress(contractAddress)) return
@@ -1002,12 +1071,22 @@ export default function App() {
       const name = identity.agent
       let resolved: string | null = null
       let ensError: string | null = null
+      let sepoliaResolved: string | null = null
+      let sepoliaExists = false
+      let sepoliaError: string | null = null
       if (name.includes('.')) {
-        const live = await readEns({ ...config, agentName: name })
+        const [live, sepoliaLive] = await Promise.all([
+          readEns({ ...config, agentName: name }, 'mainnet'),
+          readEns({ ...config, agentName: name }, 'sepolia'),
+        ])
         resolved = live.address
         ensError = live.error
+        sepoliaResolved = sepoliaLive.address
+        sepoliaExists = sepoliaLive.exists
+        sepoliaError = sepoliaLive.error
       } else {
         ensError = 'Set a parent .eth name before this can resolve.'
+        sepoliaError = ensError
       }
       let contractEns: string | null = null
       let contractError: string | null = null
@@ -1021,9 +1100,43 @@ export default function App() {
       } else {
         contractError = 'Deploy the contract to read agentEns().'
       }
-      setChainCheck({ name, resolved, ensError, contractEns, contractError })
+      setChainCheck({
+        name,
+        resolved,
+        ensError,
+        sepoliaResolved,
+        sepoliaExists,
+        sepoliaError,
+        contractEns,
+        contractError,
+      })
     } finally {
       setChecking(false)
+    }
+  }
+
+  async function registerSubname() {
+    if (registering) return
+    if (!ownerAddress) {
+      setArmError('Connect the wallet that owns chainkeys.eth.')
+      return
+    }
+    if (!isAddress(contractAddress)) {
+      setArmError('Deploy the contract before registering the subname.')
+      return
+    }
+    setArmError(null)
+    setRegistering(true)
+    try {
+      await createAgentSubname({
+        owner: ownerAddress as Address,
+        contract: contractAddress as Address,
+      })
+      await checkChain()
+    } catch (err) {
+      setArmError(walletError(err))
+    } finally {
+      setRegistering(false)
     }
   }
 
@@ -1109,10 +1222,17 @@ export default function App() {
           onOwnerEns={setOwnerEns}
           onConnected={(address, ensName) => {
             setOwnerAddress(address)
-            if (ensName) setOwnerEns(ensName)
+            setOwnerEns(ensName ?? '')
+          }}
+          onDisconnected={() => {
+            setOwnerAddress(null)
+            setOwnerEns('')
           }}
           contractAddress={contractAddress}
-          onContract={setContractAddress}
+          onContract={(address) => {
+            if (!ownerAddress) return
+            setContractsByOwner((map) => ({ ...map, [ownerAddress.toLowerCase()]: address }))
+          }}
           sessionAddress={sessionAddress}
           sessionSecret={sessionSecret}
           onSession={(address, secret) => {
@@ -1135,6 +1255,8 @@ export default function App() {
               onCheck={() => void checkChain()}
               checking={checking}
               chainCheck={chainCheck}
+              onRegister={() => void registerSubname()}
+              registering={registering}
               onOpenTest={() => {
                 window.location.hash = '/app/test'
               }}
@@ -1154,7 +1276,7 @@ export default function App() {
           }
         />
       ) : null}
-      {showName ? <NameSearch contract={contractAddress} /> : null}
+      {showName ? <NameSearch contract={contractAddress} owner={ownerAddress} /> : null}
       {view === 'chain' ? <Chain receipts={receipts} state={state} ens={ens} /> : null}
     </Shell>
   )
