@@ -1,0 +1,8 @@
+{
+  "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+  "ensRpc": "https://ethereum-rpc.publicnode.com",
+  "account": "",
+  "agentName": "",
+  "drainTx": "",
+  "swapTx": ""
+}
